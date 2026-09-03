@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LaserPrep — SVG & DXF Validator for Laser Cutting</title>
+    <meta name="description" content="Validate SVG and DXF files for laser cutting. Detect open vectors, duplicate paths, self-intersections, and more. 100% client-side processing — your files never leave your browser." />
+    <meta name="keywords" content="laser cutting, SVG validator, DXF validator, vector file check, laser cut file, open vector, duplicate path, LightBurn, RDWorks, EzCad, laser prep, vector health check" />
+    <meta name="author" content="LaserPrep" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://laserprep.app/" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="LaserPrep — SVG & DXF Validator for Laser Cutting" />
+    <meta property="og:description" content="Validate SVG and DXF files for laser cutting. Detect open vectors, duplicate paths, self-intersections, and more. 100% client-side processing." />
+    <meta property="og:url" content="https://laserprep.app/" />
+    <meta property="og:site_name" content="LaserPrep" />
+    <meta property="og:image" content="https://laserprep.app/og-image.png" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="LaserPrep — SVG & DXF Validator for Laser Cutting" />
+    <meta name="twitter:description" content="Validate SVG and DXF files for laser cutting. Detect open vectors, duplicate paths, self-intersections, and more. 100% client-side processing." />
+    <meta name="twitter:image" content="https://laserprep.app/og-image.png" />
+
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "LaserPrep",
+      "description": "Client-side SVG and DXF validator for laser cutting. Detect open vectors, duplicate paths, self-intersections, node density issues, and more. Get a health score and fix problems with one click.",
+      "url": "https://laserprep.app/",
+      "applicationCategory": "DesignApplication",
+      "operatingSystem": "Web",
+      "browserRequirements": "Requires JavaScript. Requires WebGL. Requires Web Worker support.",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "featureList": [
+        "SVG file parsing and validation",
+        "DXF file parsing and validation",
+        "Open vector detection",
+        "Duplicate path detection",
+        "Self-intersection detection",
+        "Node density analysis",
+        "Tiny geometry detection",
+        "Text-to-outline warning",
+        "Embedded raster detection",
+        "Health score calculation",
+        "Interactive canvas visualization",
+        "Layer visibility toggles",
+        "100% client-side processing"
+      ],
+      "audience": {
+        "@type": "Audience",
+        "audienceType": "Laser cutting operators, digital asset designers"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Is LaserPrep free to use?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes, LaserPrep is free. All file processing happens in your browser — there is no server upload, no subscription, and no tracking."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What file formats does LaserPrep support?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "LaserPrep supports SVG and DXF file formats. Both are parsed entirely in your browser using client-side JavaScript."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Are my files uploaded to a server?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. LaserPrep processes 100% of files in your browser. Your designs never touch a server, ensuring complete privacy."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What issues does LaserPrep detect?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "LaserPrep detects open vectors, duplicate or overlapping paths, self-intersections, excessive node density, tiny geometry under 0.1mm, unconverted text elements, and embedded raster images in vector files."
+          }
+        }
+      ]
+    }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
