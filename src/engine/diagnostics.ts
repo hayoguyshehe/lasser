@@ -7,6 +7,7 @@ import type {
   DiagnosticResult,
   Point,
 } from '@/types';
+import { dist, linesIntersect, pathsOverlap, pathToPolyline } from './geometry';
 
 let issueIdCounter = 0;
 const nextIssueId = () => `issue-${(++issueIdCounter).toString(36)}`;
@@ -30,10 +31,6 @@ const SEVERITY_MAP: Record<IssueCategory, IssueSeverity> = {
   'text-not-outlined': 'medium',
   'embedded-raster': 'medium',
 };
-
-function dist(a: Point, b: Point): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
 
 function getEndpoints(path: VectorPath): { start: Point; end: Point } | null {
   if (path.segments.length === 0) return null;
@@ -63,29 +60,6 @@ function detectOpenVectors(model: InternalPathModel): DiagnosticIssue[] {
     }
   }
   return issues;
-}
-
-function pathsOverlap(a: VectorPath, b: VectorPath): boolean {
-  for (const segA of a.segments) {
-    for (const segB of b.segments) {
-      if (segA.type === 'line' && segB.type === 'line') {
-        if (linesIntersect(segA.start, segA.end, segB.start, segB.end)) return true;
-      }
-    }
-  }
-  return false;
-}
-
-function linesIntersect(p1: Point, p2: Point, p3: Point, p4: Point): boolean {
-  const d1x = p2.x - p1.x;
-  const d1y = p2.y - p1.y;
-  const d2x = p4.x - p3.x;
-  const d2y = p4.y - p3.y;
-  const denom = d1x * d2y - d1y * d2x;
-  if (Math.abs(denom) < 1e-10) return false;
-  const t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / denom;
-  const u = ((p3.x - p1.x) * d1y - (p3.y - p1.y) * d1x) / denom;
-  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
 }
 
 function detectDuplicates(model: InternalPathModel): DiagnosticIssue[] {
@@ -125,14 +99,11 @@ function detectDuplicates(model: InternalPathModel): DiagnosticIssue[] {
 function detectSelfIntersections(model: InternalPathModel): DiagnosticIssue[] {
   const issues: DiagnosticIssue[] = [];
   for (const path of model.paths) {
-    const segs = path.segments.filter((s) => s.type === 'line') as Extract<
-      VectorPath['segments'][number],
-      { type: 'line' }
-    >[];
-    for (let i = 0; i < segs.length; i++) {
-      for (let j = i + 2; j < segs.length; j++) {
-        if (i === 0 && j === segs.length - 1 && path.closed) continue;
-        if (linesIntersect(segs[i].start, segs[i].end, segs[j].start, segs[j].end)) {
+    const poly = pathToPolyline(path);
+    for (let i = 0; i < poly.length - 1; i++) {
+      for (let j = i + 2; j < poly.length - 1; j++) {
+        if (i === 0 && j === poly.length - 2 && path.closed) continue;
+        if (linesIntersect(poly[i], poly[i + 1], poly[j], poly[j + 1])) {
           issues.push({
             id: nextIssueId(),
             category: 'self-intersection',
@@ -140,7 +111,7 @@ function detectSelfIntersections(model: InternalPathModel): DiagnosticIssue[] {
             message: `Self-intersection detected — cut path will be unpredictable`,
             pathId: path.id,
             layerId: path.layerId,
-            location: segs[i].end,
+            location: poly[i + 1],
             details: `Segment ${i} intersects segment ${j}`,
           });
           break;
@@ -155,6 +126,7 @@ function detectNodeDensity(model: InternalPathModel): DiagnosticIssue[] {
   const issues: DiagnosticIssue[] = [];
   for (const path of model.paths) {
     if (path.segments.length === 0) continue;
+    if (path.isPrimitive) continue;
     const perimeter = path.segments.reduce((acc, s) => {
       if (s.type === 'line') return acc + dist(s.start, s.end);
       if (s.type === 'bezier') return acc + dist(s.start, s.cp1) + dist(s.cp1, s.cp2) + dist(s.cp2, s.end);
@@ -162,7 +134,8 @@ function detectNodeDensity(model: InternalPathModel): DiagnosticIssue[] {
     }, 0);
     if (perimeter < 0.001) continue;
     const density = path.nodeCount / perimeter;
-    if (density > 20) {
+    const threshold = path.isPrimitive ? 100 : 20;
+    if (density > threshold) {
       issues.push({
         id: nextIssueId(),
         category: 'node-density',

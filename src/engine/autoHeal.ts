@@ -5,6 +5,7 @@ import type {
   Point,
   BBox,
 } from '@/types';
+import { pathsSameGeometry } from './geometry';
 
 const WELD_TOLERANCE = 0.1;
 
@@ -71,15 +72,6 @@ function weldOpenPaths(model: InternalPathModel): { model: InternalPathModel; fi
   return { model: { ...model, paths: newPaths }, fixed };
 }
 
-function pathsSameGeometry(a: VectorPath, b: VectorPath): boolean {
-  if (a.segments.length !== b.segments.length) return false;
-  if (Math.abs(a.bbox.minX - b.bbox.minX) > 0.01) return false;
-  if (Math.abs(a.bbox.minY - b.bbox.minY) > 0.01) return false;
-  if (Math.abs(a.bbox.width - b.bbox.width) > 0.01) return false;
-  if (Math.abs(a.bbox.height - b.bbox.height) > 0.01) return false;
-  return true;
-}
-
 function deduplicatePaths(model: InternalPathModel): { model: InternalPathModel; fixed: number } {
   let fixed = 0;
   const keep: VectorPath[] = [];
@@ -100,31 +92,33 @@ function deduplicatePaths(model: InternalPathModel): { model: InternalPathModel;
   return { model: { ...model, paths: keep }, fixed };
 }
 
-function simplifyPath(path: VectorPath, tolerance: number): VectorPath {
-  if (path.segments.length <= 2) return path;
+type LineRun = { startIdx: number; endIdx: number };
 
-  const points: Point[] = [path.segments[0].start];
-  for (const seg of path.segments) {
-    points.push(seg.end);
+function findLineRuns(segments: PathSegment[]): LineRun[] {
+  const runs: LineRun[] = [];
+  let runStart = -1;
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i].type === 'line') {
+      if (runStart === -1) runStart = i;
+    } else {
+      if (runStart !== -1 && i - runStart >= 3) {
+        runs.push({ startIdx: runStart, endIdx: i - 1 });
+      }
+      runStart = -1;
+    }
   }
-
-  const keep = douglasPeucker(points, tolerance);
-  if (keep.length < 3) return path;
-
-  const newSegs: PathSegment[] = [];
-  for (let i = 0; i < keep.length - 1; i++) {
-    newSegs.push({ type: 'line', start: keep[i], end: keep[i + 1] });
+  if (runStart !== -1 && segments.length - runStart >= 3) {
+    runs.push({ startIdx: runStart, endIdx: segments.length - 1 });
   }
-  if (path.closed && newSegs.length > 0) {
-    newSegs.push({ type: 'line', start: newSegs[newSegs.length - 1].end, end: newSegs[0].start });
-  }
+  return runs;
+}
 
-  return {
-    ...path,
-    segments: newSegs,
-    nodeCount: countNodes(newSegs),
-    bbox: computeBBox(newSegs),
-  };
+function perpendicularDistance(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-10) return dist(p, a);
+  return Math.abs(dy * p.x - dx * p.y + b.x * a.y - b.y * a.x) / len;
 }
 
 function douglasPeucker(points: Point[], tolerance: number): Point[] {
@@ -152,12 +146,45 @@ function douglasPeucker(points: Point[], tolerance: number): Point[] {
   return [first, last];
 }
 
-function perpendicularDistance(p: Point, a: Point, b: Point): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const len = Math.hypot(dx, dy);
-  if (len < 1e-10) return dist(p, a);
-  return Math.abs(dy * p.x - dx * p.y + b.x * a.y - b.y * a.x) / len;
+function simplifyPath(path: VectorPath, tolerance: number): VectorPath {
+  if (path.segments.length < 3) return path;
+
+  const runs = findLineRuns(path.segments);
+  if (runs.length === 0) return path;
+
+  let changed = false;
+  const newSegments: PathSegment[] = [];
+
+  for (let i = 0; i < path.segments.length; i++) {
+    const matchingRun = runs.find((r) => r.startIdx === i);
+    if (matchingRun) {
+      const runSegs = path.segments.slice(matchingRun.startIdx, matchingRun.endIdx + 1);
+      const pts: Point[] = [runSegs[0].start];
+      for (const s of runSegs) pts.push((s as Extract<PathSegment, { type: 'line' }>).end);
+
+      const simplified = douglasPeucker(pts, tolerance);
+      if (simplified.length < pts.length) {
+        changed = true;
+        for (let j = 0; j < simplified.length - 1; j++) {
+          newSegments.push({ type: 'line', start: simplified[j], end: simplified[j + 1] });
+        }
+      } else {
+        newSegments.push(...runSegs);
+      }
+      i = matchingRun.endIdx;
+    } else {
+      newSegments.push(path.segments[i]);
+    }
+  }
+
+  if (!changed) return path;
+
+  return {
+    ...path,
+    segments: newSegments,
+    nodeCount: countNodes(newSegments),
+    bbox: computeBBox(newSegments),
+  };
 }
 
 function simplifyPaths(model: InternalPathModel, tolerance: number): { model: InternalPathModel; fixed: number } {

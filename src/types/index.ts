@@ -18,6 +18,7 @@ export type VectorPath = {
   strokeWidth: number;
   nodeCount: number;
   bbox: BBox;
+  isPrimitive?: boolean;
 };
 
 export type BBox = {
