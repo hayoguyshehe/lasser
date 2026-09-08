@@ -4,6 +4,106 @@ import type { InternalPathModel, VectorPath, PathSegment, Point, BBox, Layer } f
 let pathIdCounter = 0;
 const nextPathId = () => `path-${(++pathIdCounter).toString(36)}`;
 
+type Matrix = { a: number; b: number; c: number; d: number; e: number; f: number };
+
+const IDENTITY: Matrix = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+
+function multiplyMatrix(m1: Matrix, m2: Matrix): Matrix {
+  return {
+    a: m1.a * m2.a + m1.c * m2.b,
+    b: m1.b * m2.a + m1.d * m2.b,
+    c: m1.a * m2.c + m1.c * m2.d,
+    d: m1.b * m2.c + m1.d * m2.d,
+    e: m1.a * m2.e + m1.c * m2.f + m1.e,
+    f: m1.b * m2.e + m1.d * m2.f + m1.f,
+  };
+}
+
+function parseTransform(transform: string, warnings: string[]): Matrix {
+  let result: Matrix = { ...IDENTITY };
+  const re = /(\w+)\s*\(([^)]*?)\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(transform)) !== null) {
+    const fn = match[1];
+    const args = match[2].split(/[\s,]+/).filter(Boolean).map(parseFloat);
+    let m: Matrix;
+    switch (fn) {
+      case 'matrix': {
+        if (args.length < 6) { warnings.push(`Invalid matrix() transform: ${match[0]}`); continue; }
+        m = { a: args[0], b: args[1], c: args[2], d: args[3], e: args[4], f: args[5] };
+        break;
+      }
+      case 'translate': {
+        const tx = args[0] || 0;
+        const ty = args[1] || 0;
+        m = { a: 1, b: 0, c: 0, d: 1, e: tx, f: ty };
+        break;
+      }
+      case 'scale': {
+        const sx = args[0] ?? 1;
+        const sy = args.length > 1 ? args[1] : sx;
+        m = { a: sx, b: 0, c: 0, d: sy, e: 0, f: 0 };
+        break;
+      }
+      case 'rotate': {
+        const angle = ((args[0] || 0) * Math.PI) / 180;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const cx = args[1] || 0;
+        const cy = args[2] || 0;
+        if (cx !== 0 || cy !== 0) {
+          const t1: Matrix = { a: 1, b: 0, c: 0, d: 1, e: cx, f: cy };
+          const r: Matrix = { a: cos, b: sin, c: -sin, d: cos, e: 0, f: 0 };
+          const t2: Matrix = { a: 1, b: 0, c: 0, d: 1, e: -cx, f: -cy };
+          m = multiplyMatrix(t1, multiplyMatrix(r, t2));
+        } else {
+          m = { a: cos, b: sin, c: -sin, d: cos, e: 0, f: 0 };
+        }
+        break;
+      }
+      case 'skewX': {
+        warnings.push(`skewX transform not supported, geometry may be incorrect`);
+        continue;
+      }
+      case 'skewY': {
+        warnings.push(`skewY transform not supported, geometry may be incorrect`);
+        continue;
+      }
+      default:
+        warnings.push(`Unknown transform function: ${fn}`);
+        continue;
+    }
+    result = multiplyMatrix(result, m);
+  }
+  return result;
+}
+
+function transformPoint(p: Point, m: Matrix): Point {
+  return {
+    x: m.a * p.x + m.c * p.y + m.e,
+    y: m.b * p.x + m.d * p.y + m.f,
+  };
+}
+
+function transformSegments(segments: PathSegment[], m: Matrix): PathSegment[] {
+  if (m === IDENTITY) return segments;
+  return segments.map((seg) => {
+    if (seg.type === 'line') {
+      return { type: 'line' as const, start: transformPoint(seg.start, m), end: transformPoint(seg.end, m) };
+    }
+    if (seg.type === 'bezier') {
+      return {
+        type: 'bezier' as const,
+        start: transformPoint(seg.start, m),
+        cp1: transformPoint(seg.cp1, m),
+        cp2: transformPoint(seg.cp2, m),
+        end: transformPoint(seg.end, m),
+      };
+    }
+    return seg;
+  }) as PathSegment[];
+}
+
 function parsePointsString(str: string): Point[] {
   return str
     .trim()
@@ -201,7 +301,8 @@ function extractFill(el: Element): string | null {
 function processElement(
   el: Element,
   model: InternalPathModel,
-  warnings: string[]
+  warnings: string[],
+  parentMatrix: Matrix = IDENTITY
 ): void {
   const tag = el.tagName.toLowerCase();
 
@@ -302,8 +403,10 @@ function processElement(
       break;
     }
     case 'g': {
+      const transformAttr = el.getAttribute('transform') || '';
+      const groupMatrix = transformAttr ? multiplyMatrix(parentMatrix, parseTransform(transformAttr, warnings)) : parentMatrix;
       for (const child of Array.from(el.children)) {
-        processElement(child, model, warnings);
+        processElement(child, model, warnings, groupMatrix);
       }
       return;
     }
@@ -312,6 +415,12 @@ function processElement(
   }
 
   if (segments.length === 0) return;
+
+  const transformAttr = el.getAttribute('transform') || '';
+  const elementMatrix = transformAttr ? multiplyMatrix(parentMatrix, parseTransform(transformAttr, warnings)) : parentMatrix;
+  if (elementMatrix !== IDENTITY) {
+    segments = transformSegments(segments, elementMatrix);
+  }
 
   const layerId = getLayerId(el);
   const path: VectorPath = {
@@ -345,8 +454,14 @@ export function parseSVG(svgText: string): InternalPathModel {
   });
 
   const parser = new DOMParser();
-  const doc = parser.parseFromString(sanitized, 'image/svg+xml');
-  const svgEl = doc.querySelector('svg');
+  let doc = parser.parseFromString(sanitized, 'image/svg+xml');
+  let svgEl = doc.querySelector('svg');
+
+  if (!svgEl) {
+    const wrapped = `<svg xmlns="http://www.w3.org/2000/svg">${sanitized}</svg>`;
+    doc = parser.parseFromString(wrapped, 'image/svg+xml');
+    svgEl = doc.querySelector('svg');
+  }
 
   if (!svgEl) {
     throw new Error('No <svg> element found in file');
@@ -379,9 +494,14 @@ export function parseSVG(svgText: string): InternalPathModel {
     warnings,
   };
 
+  const rootTransform = svgEl.getAttribute('transform') || '';
+  const rootMatrix = rootTransform ? parseTransform(rootTransform, warnings) : IDENTITY;
   for (const child of Array.from(svgEl.children)) {
-    processElement(child, model, warnings);
+    processElement(child, model, warnings, rootMatrix);
   }
 
   return model;
 }
+
+export { parseTransform, transformPoint, multiplyMatrix, transformSegments };
+export type { Matrix };
