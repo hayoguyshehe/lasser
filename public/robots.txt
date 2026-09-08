@@ -1,5 +1,4 @@
 User-agent: *
 Allow: /
-Disallow: /workspace
 
 Sitemap: https://laserprep.app/sitemap.xml

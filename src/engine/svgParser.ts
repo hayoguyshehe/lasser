@@ -219,6 +219,7 @@ function processElement(
 
   let segments: PathSegment[] = [];
   let closed = false;
+  let isPrimitive = false;
 
   switch (tag) {
     case 'path': {
@@ -259,6 +260,7 @@ function processElement(
         }
         segments = pointsToSegments(pts, true);
         closed = true;
+        isPrimitive = true;
       }
       break;
     }
@@ -276,6 +278,7 @@ function processElement(
         }
         segments = pointsToSegments(pts, true);
         closed = true;
+        isPrimitive = true;
       }
       break;
     }
@@ -321,6 +324,7 @@ function processElement(
     strokeWidth: extractStrokeWidth(el),
     nodeCount: countNodes(segments),
     bbox: computeBBox(segments),
+    isPrimitive,
   };
   model.paths.push(path);
 

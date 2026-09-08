@@ -83,6 +83,8 @@ interface DxfEntity {
   end?: { x: number; y: number };
   center?: { x: number; y: number };
   radius?: number;
+  majorAxis?: { x: number; y: number };
+  majorAxisRatio?: number;
   startAngle?: number;
   endAngle?: number;
   bulge?: number;
@@ -97,6 +99,7 @@ interface DxfEntity {
   endPoint?: { x: number; y: number };
   controlPoints?: { x: number; y: number }[];
   degree?: number;
+  name?: string;
 }
 
 interface DxfData {
@@ -154,6 +157,7 @@ export function parseDXF(dxfText: string): InternalPathModel {
 
     let segments: PathSegment[] = [];
     let closed = false;
+    let isPrimitive = false;
     const layerName = entity.layer || '0';
     const color = layerColors[layerName] || (entity.color ? colorFromAci(entity.color) : '#333333');
 
@@ -236,6 +240,7 @@ export function parseDXF(dxfText: string): InternalPathModel {
             segments.push({ type: 'line', start: pts[i], end: pts[i + 1] });
           }
           closed = true;
+          isPrimitive = true;
         }
         break;
       }
@@ -249,6 +254,33 @@ export function parseDXF(dxfText: string): InternalPathModel {
         break;
       }
       case 'ELLIPSE': {
+        if (entity.center && entity.majorAxis) {
+          const cx = entity.center.x;
+          const cy = entity.center.y;
+          const majorLen = Math.hypot(entity.majorAxis.x, entity.majorAxis.y);
+          const minorLen = majorLen * (entity.majorAxisRatio ?? 1);
+          const angle = Math.atan2(entity.majorAxis.y, entity.majorAxis.x);
+          if (majorLen > 0 && minorLen > 0) {
+            const steps = 64;
+            const pts: Point[] = [];
+            const sa = entity.startAngle ?? 0;
+            const ea = entity.endAngle ?? Math.PI * 2;
+            for (let i = 0; i <= steps; i++) {
+              const t = sa + (ea - sa) * (i / steps);
+              const lx = majorLen * Math.cos(t);
+              const ly = minorLen * Math.sin(t);
+              pts.push({
+                x: cx + lx * Math.cos(angle) - ly * Math.sin(angle),
+                y: cy + lx * Math.sin(angle) + ly * Math.cos(angle),
+              });
+            }
+            for (let i = 0; i < pts.length - 1; i++) {
+              segments.push({ type: 'line', start: pts[i], end: pts[i + 1] });
+            }
+            closed = Math.abs(ea - sa - Math.PI * 2) < 1e-6;
+            isPrimitive = true;
+          }
+        }
         break;
       }
       case 'SPLINE': {
@@ -257,10 +289,12 @@ export function parseDXF(dxfText: string): InternalPathModel {
           for (let i = 0; i < cps.length - 1; i++) {
             segments.push({ type: 'line', start: { x: cps[i].x, y: cps[i].y }, end: { x: cps[i + 1].x, y: cps[i + 1].y } });
           }
+          warnings.push('Spline approximated with straight segments — shape may be inaccurate');
         }
         break;
       }
       case 'INSERT': {
+        warnings.push(`Block insert (INSERT) not supported yet — geometry may be missing`);
         break;
       }
       default:
@@ -280,6 +314,7 @@ export function parseDXF(dxfText: string): InternalPathModel {
       strokeWidth: 1,
       nodeCount: countNodes(segments),
       bbox,
+      isPrimitive,
     };
     model.paths.push(path);
 
