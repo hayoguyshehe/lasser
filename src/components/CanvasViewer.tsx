@@ -3,15 +3,27 @@ import { useAppStore } from '@/store/appStore';
 import type { InternalPathModel, VectorPath, Point } from '@/types';
 
 const COLORS = {
-  grid: 'rgba(26,26,26,0.04)',
-  gridMajor: 'rgba(26,26,26,0.08)',
-  background: '#1a1d23',
-  pathDefault: '#e8833a',
-  pathSelected: '#ff4d00',
-  issueHigh: '#ef4444',
-  issueMedium: '#f59e0b',
-  issueLow: '#3b82f6',
+  grid: 'rgba(15,23,42,0.06)',
+  gridMajor: 'rgba(15,23,42,0.12)',
+  background: '#f8fafc',
+  pathDefault: '#172033',
+  pathSelected: '#c2410c',
+  issueHigh: '#dc2626',
+  issueMedium: '#d97706',
+  issueLow: '#2563eb',
 };
+
+function getContrastColor(color: string | null): string {
+  if (!color) return COLORS.pathDefault;
+  const hex = color.trim().replace('#', '');
+  if (!/^(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(hex)) return color;
+  const normalized = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
+  const r = parseInt(normalized.slice(0, 2), 16);
+  const g = parseInt(normalized.slice(2, 4), 16);
+  const b = parseInt(normalized.slice(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.82 ? COLORS.pathDefault : color;
+}
 
 function worldToScreen(p: Point, canvasW: number, canvasH: number, zoom: number, pan: { x: number; y: number }, model: InternalPathModel): Point {
   const scale = Math.min(canvasW / model.width, canvasH / model.height) * 0.85 * zoom;
@@ -41,8 +53,8 @@ function drawPath(ctx: CanvasRenderingContext2D, path: VectorPath, canvasW: numb
     }
   }
 
-  ctx.strokeStyle = isSelected ? COLORS.pathSelected : path.color || COLORS.pathDefault;
-  ctx.lineWidth = isSelected ? 2.5 : 1.2;
+  ctx.strokeStyle = isSelected ? COLORS.pathSelected : getContrastColor(path.color);
+  ctx.lineWidth = isSelected ? 2.75 : 1.8;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   ctx.stroke();
@@ -114,7 +126,7 @@ export function CanvasViewer() {
     const ch = rect.height;
     canvas.width = cw * dpr;
     canvas.height = ch * dpr;
-    ctx.scale(dpr, dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     ctx.fillStyle = COLORS.background;
     ctx.fillRect(0, 0, cw, ch);
@@ -219,7 +231,7 @@ export function CanvasViewer() {
   }, [model, zoom, pan, selectPath]);
 
   return (
-    <div className="flex-1 relative overflow-hidden bg-[#1a1d23]">
+    <div className="flex-1 relative overflow-hidden bg-slate-50">
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"
